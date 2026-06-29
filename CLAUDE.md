@@ -19,17 +19,17 @@ Stack: TypeScript (type-only library, nothing is emitted — `tsc` runs purely a
 
 ## Commands
 
-Run after `npm install`:
+This repo uses **pnpm** (pinned via `packageManager` in `package.json`). Run after `pnpm install`:
 
-| Command             | What it does                                                                                                                                                                                                                            |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run typecheck` | `tsc --noEmit` — the real "build". This is what proves the types work.                                                                                                                                                                  |
-| `npm test`          | Alias for `typecheck`. "Tests" are **type-level assertions** (e.g. `type _ = Expect<Equal<Parse<G, "...">, Expected>>`) that fail by producing a type error — there is no runtime test runner. A failing typecheck _is_ a failing test. |
-| `npm run lint`      | ESLint over the repo. `npm run lint:fix` to autofix.                                                                                                                                                                                    |
-| `npm run format`    | Prettier write. `npm run format:check` to verify without writing.                                                                                                                                                                       |
-| `npm run check`     | `format:check` + `lint` + `typecheck` — run this before committing.                                                                                                                                                                     |
+| Command                | What it does                                                                                                                                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run typecheck`   | `tsc --noEmit` — the real "build". This is what proves the types work.                                                                                                                                                                  |
+| `pnpm test`            | Alias for `typecheck`. "Tests" are **type-level assertions** (e.g. `type _ = Expect<Equal<Parse<G, "...">, Expected>>`) that fail by producing a type error — there is no runtime test runner. A failing typecheck _is_ a failing test. |
+| `pnpm run lint`        | ESLint over the repo. `pnpm run lint:fix` to autofix.                                                                                                                                                                                   |
+| `pnpm run format`      | Prettier write. `pnpm run format:check` to verify without writing.                                                                                                                                                                      |
+| `pnpm run check`       | `format:check` + `lint` + `typecheck` — run this before committing.                                                                                                                                                                     |
 
-There is no single-test command yet (no test runner). To check one grammar/utility in isolation, write its assertions in a `.ts` file under `tests/` (or `src/`) and run `npm run typecheck` — `tsc` checks the whole project at once. ESLint's `no-unused-vars` is configured to ignore underscore-prefixed names, so `type _Check = Expect<...>` lints clean.
+There is no single-test command yet (no test runner). To check one grammar/utility in isolation, write its assertions in a `.ts` file under `tests/` (or `src/`) and run `pnpm run typecheck` — `tsc` checks the whole project at once. ESLint's `no-unused-vars` is configured to ignore underscore-prefixed names, so `type _Check = Expect<...>` lints clean.
 
 ## Navigating the code (codebase-memory MCP)
 
