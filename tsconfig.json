@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    /* The library is type-only — nothing is emitted; tsc runs purely as the checker. */
+    "noEmit": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    /* Strictness — non-negotiable for type-level work: every inference must be exact. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "skipLibCheck": true
+  },
+  "include": ["src", "tests", "eslint.config.mjs"]
+}

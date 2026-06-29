@@ -2,10 +2,10 @@
 
 > A parser generator that runs entirely in the TypeScript type system.
 
-Define a grammar with combinators, point it at a string *literal type*, and get back a fully-typed AST -- at compile time, with zero runtime code. 
+Define a grammar with combinators, point it at a string _literal type_, and get back a fully-typed AST -- at compile time, with zero runtime code.
 
 ```ts
-type Result = Parse<Arithmetic, "1 + 2 * 3">
+type Result = Parse<Arithmetic, "1 + 2 * 3">;
 //   ^? { op: "+"; left: 1; right: { op: "*"; left: 2; right: 3 } }
 ```
 
@@ -13,14 +13,14 @@ The grammar above is itself just types. `tsc` does the parsing while it checks y
 
 ## Why
 
-The usual parser generator (yacc, ANTLR, peg.js) takes a grammar and emits *source code* you run at runtime. `typed_parser` emits nothing -- the parser **is** a generic type, and "running" it means instantiating that type. The payoff is the same one Supabase gets: a string literal in your source can drive the static return type of a function, so the editor knows the shape of a query's result before you ever run it.
+The usual parser generator (yacc, ANTLR, peg.js) takes a grammar and emits _source code_ you run at runtime. `typed_parser` emits nothing -- the parser **is** a generic type, and "running" it means instantiating that type. The payoff is the same one Supabase gets: a string literal in your source can drive the static return type of a function, so the editor knows the shape of a query's result before you ever run it.
 
 This is a different toolbox from a runtime parser:
 
 - No loops -- every repetition is recursion.
 - No mutable state -- parser state (remaining input, accumulated result, position) is carried in type parameters.
 - No arithmetic -- counting (position, depth, repetitions) is done with tuple length.
-- A hard recursion-depth ceiling -- `tsc` bails with *"type instantiation is excessively deep"* if you aren't careful.
+- A hard recursion-depth ceiling -- `tsc` bails with _"type instantiation is excessively deep"_ if you aren't careful.
 
 These constraints shape the entire design. The combinators are written tail-recursively from the start so they survive realistic inputs without blowing the depth limit.
 
@@ -37,16 +37,16 @@ You assemble a grammar by hand from these combinators today. A human-readable st
 
 ## Combinators
 
-| Combinator | Meaning |
-|---|---|
-| `Lit<S>` | match an exact string |
-| `CharIn<S>` / `AnyChar` / `EOF` | character-level primitives |
-| `Seq<[P1, P2, ...]>` | sequence; accumulates results into a tuple |
-| `Or<[P1, P2, ...]>` | ordered choice (first match wins) |
-| `Many<P>` / `Many1<P>` | zero-or-more / one-or-more |
-| `Opt<P>` | optional |
-| `Not<P>` / `And<P>` | negative / positive lookahead |
-| `Map<P, F>` | transform a parse result into an AST node |
+| Combinator                      | Meaning                                    |
+| ------------------------------- | ------------------------------------------ |
+| `Lit<S>`                        | match an exact string                      |
+| `CharIn<S>` / `AnyChar` / `EOF` | character-level primitives                 |
+| `Seq<[P1, P2, ...]>`            | sequence; accumulates results into a tuple |
+| `Or<[P1, P2, ...]>`             | ordered choice (first match wins)          |
+| `Many<P>` / `Many1<P>`          | zero-or-more / one-or-more                 |
+| `Opt<P>`                        | optional                                   |
+| `Not<P>` / `And<P>`             | negative / positive lookahead              |
+| `Map<P, F>`                     | transform a parse result into an AST node  |
 
 ## Status
 
@@ -57,7 +57,7 @@ Early / experimental. The roadmap is built strictly bottom-up -- each layer depe
 2. **Primitive combinators** -- `Lit`, `CharIn`, `AnyChar`, `EOF`.
 3. **Composite combinators** -- `Seq`, `Or`, `Many`, `Opt`, `Not`, `Map`. The engine's heart; `Many` is the make-or-break piece and must be tail-recursive.
 4. **Recursive & named rules** -- mutual recursion, left-recursion policy (PEG forbids it).
-5. **String PEG surface** *(optional)* -- a metaparser, written in the core combinators, that turns grammar text into a combinator tree. Bootstrap; comes much later.
+5. **String PEG surface** _(optional)_ -- a metaparser, written in the core combinators, that turns grammar text into a combinator tree. Bootstrap; comes much later.
 6. **Limits & DX** -- depth management, surfacing `Failure` as readable messages, type-level unit tests.
 7. **Validation targets** -- arithmetic expressions (precedence, associativity), a Supabase-style mini `SELECT`, a JSON subset.
 
