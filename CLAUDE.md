@@ -13,9 +13,17 @@ type Result = Parse<Arithmetic, "1 + 2 * 3">;
 
 ## Current state
 
-Tooling is scaffolded (`package.json`, `tsconfig.json`, ESLint, Prettier). The public type surface is **stubbed but not implemented**: `src/index.ts` declares every combinator plus the `Parse` entry point, but their bodies resolve to `Unimplemented` (a unique-symbol placeholder). Real work starts at layer 0 (see build order below).
+The library is **implemented through layer 6, with the arithmetic validation target green** (see build order below). `src/index.ts` is a single type-only module:
 
-A type-level **test suite already exists** under `tests/`, derived from the README, and is **red on purpose** — it is the spec to implement against. The suite is **Vitest type tests** (`*.test-d.ts`, run in `--typecheck` mode); `pnpm test` currently reports the unimplemented behavioural assertions as failing type tests, while the protocol-layer tests (`tests/protocol.test-d.ts`) already pass. Each combinator's expected result shape is documented in the header comment of its test file — those comments are the authoritative conventions (e.g. `Opt` yields `null` when absent; `Parse` requires the whole input to be consumed).
+- **Combinators are inert, tagged descriptions** (`interface Lit { _p: "Lit"; … }`, etc.), not logic. A central interpreter `Run<P, In>` dispatches on the `_p` tag against the remaining input and returns `Success<Value, Rest>` or `Failure<Reason, Pos>`. `Parse<Grammar, Input>` runs a grammar, requires the **whole** input to be consumed, and unwraps the value on success (otherwise returns the `Failure`).
+- **`Map<P, F>`** rewrites a result through a higher-kinded type-level function: an interface that `extends TypeFn` and redefines `output` in terms of `this["input"]`, invoked via `Apply`.
+- **Recursion** (`expr → term → factor → expr`) is plain recursive type aliases through the combinator interfaces; the `Rule<Def>` indirection is the named-rule mechanism. `Seq`/`Or`/`Many` and the fold helpers recurse in tail position, and `Many` halts on a zero-width match.
+- **Layer 5** — `Peg<Src>` / `ParsePeg<Src, Input>`: a metaparser _written in the core combinators_ that compiles PEG **expression** text into a combinator tree. Char classes are explicit sets; named-rule references and `a-z` ranges are not done yet.
+- **Layer 6** — `Explain<R>` renders a `Failure` as a readable string; `IsSuccess` / `IsFailure` classify a result.
+
+The **test suite is green**: Vitest type tests (`*.test-d.ts`, `--typecheck` mode), 6 files / 54 assertions covering every layer. Each file's header comment documents the conventions it pins (e.g. `Opt` yields `null` when absent; `Parse` requires full consumption; a single PEG child is not wrapped). Run `pnpm test`.
+
+Still open: the remaining layer-7 validation targets (a Supabase-style mini `SELECT`, a JSON subset) and a richer PEG surface (named-rule grammars, char ranges).
 
 Stack: TypeScript (type-only library, nothing is emitted — `tsc` runs purely as the checker), ESLint 10 (flat config, type-aware via typescript-eslint), Prettier. Node ≥ 20.
 
@@ -31,7 +39,7 @@ This repo uses **pnpm** (pinned via `packageManager` in `package.json`). Run aft
 | `pnpm run format`    | Prettier write. `pnpm run format:check` to verify without writing.                                                                                                                                                                                         |
 | `pnpm run check`     | `format:check` + `lint` + `typecheck` — run this before committing.                                                                                                                                                                                        |
 
-To check one grammar/utility in isolation, add assertions to a `*.test-d.ts` file under `tests/` and run `pnpm test` (or `pnpm run test:watch` while iterating); `vitest --typecheck -t "<name>"` filters by test name. Wrap assertions in `describe`/`test` blocks and assert with `expectTypeOf<Actual>().toEqualTypeOf<Expected>()` — Vitest reports each as a named type test, and a mismatch surfaces as a `TypeCheckError` attributed to that line (no `noUnusedLocals` workaround needed). For failure cases, assert `expectTypeOf<IsErr<Parse<...>>>().toEqualTypeOf<true>()`; `IsErr` (the only remaining helper) lives in `tests/harness.ts`. Config: `vitest.config.ts`.
+To check one grammar/utility in isolation, add assertions to a `*.test-d.ts` file under `tests/` and run `pnpm test` (or `pnpm run test:watch` while iterating); `vitest --typecheck -t "<name>"` filters by test name. Wrap assertions in `describe`/`test` blocks and assert with `expectTypeOf<Actual>().toEqualTypeOf<Expected>()` — Vitest reports each as a named type test, and a mismatch surfaces as a `TypeCheckError` attributed to that line (no `noUnusedLocals` workaround needed). For failure cases, assert `expectTypeOf<IsErr<Parse<...>>>().toEqualTypeOf<true>()`; `IsErr` lives in `tests/harness.ts` (the public `IsFailure` / `IsSuccess` / `Explain` in `src/index.ts` are equivalent and exercised by `tests/dx.test-d.ts`). Config: `vitest.config.ts`.
 
 ## Navigating the code (codebase-memory MCP)
 
@@ -77,13 +85,13 @@ Combinators compose by passing the `Rest` of one success as the input state of t
 
 Each layer depends on the one below; do not start a layer until the one beneath it is proven with type-level tests.
 
-0. Type-level utilities — string/char/tuple helpers, tuple-length counters (the no-arithmetic workaround). Everything rests on this.
-1. Core types & protocol — `State` / `Success` / `Failure`.
-2. Primitive combinators.
-3. Composite combinators (`Many` is the critical, must-be-tail-recursive piece).
-4. Recursive & named rules.
-5. String PEG surface _(optional, much later)_ — a metaparser written in the core combinators that turns grammar text like `"expr = term ('+' term)*"` into a combinator tree. Sits on top of a stable core; does not replace it.
-6. Limits & DX — depth management, surfacing `Failure` as readable messages, type-level unit tests.
-7. Validation targets — arithmetic (precedence/associativity), a Supabase-style mini `SELECT`, a JSON subset.
+0. ✅ Type-level utilities — `Join`, `ToNum`, `StrEq`, plus the `TypeFn` / `Apply` HKT encoding (the no-arithmetic, no-loop workarounds).
+1. ✅ Core types & protocol — `Success` / `Failure`. State is just the remaining string; `Failure.pos` carries it.
+2. ✅ Primitive combinators — `Lit` `CharIn` `AnyChar` `EOF`.
+3. ✅ Composite combinators — `Seq` `Or` `Many` `Many1` `Opt` `Not` `And` `Map`. `Many` is tail-recursive with a zero-width guard.
+4. ✅ Recursive & named rules — recursive type aliases through the combinator interfaces + the `Rule` indirection.
+5. ◐ String PEG surface — `Peg` / `ParsePeg` compile PEG **expression** text. _Done:_ literals, explicit char classes, `.`, sequence, `/`, `* + ?`, `! &`, groups. _Not done:_ named-rule grammars (`expr = term …`), `a-z` ranges.
+6. ✅ Limits & DX — tail-recursive evaluation, `Explain` readable failures, `IsSuccess` / `IsFailure`, and the type-level unit tests.
+7. ◐ Validation targets — ✅ arithmetic (precedence/associativity/parens). _Remaining:_ a Supabase-style mini `SELECT`, a JSON subset.
 
-**MVP = layers 0→4 plus a working arithmetic parser.** Prove the core that way before `SELECT` or the string PEG surface.
+**MVP (layers 0→4 plus a working arithmetic parser) is complete**, as are layers 5–6. Next up is layer 7's remaining targets (`SELECT`, JSON) and/or extending the PEG surface to named-rule grammars.
