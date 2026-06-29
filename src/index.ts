@@ -19,7 +19,7 @@
 declare const _unimplemented: unique symbol;
 export type Unimplemented<_Hint = unknown> = typeof _unimplemented;
 
-/* ────────────────────────── Layer 1: core protocol ──────────────────────────
+/* -------------------------- Layer 1: core protocol --------------------------
  * A parser maps a State (remaining input + position) to a Result: the tagged
  * union Success | Failure. These data shapes are defined (no logic), so the
  * protocol tests are green; everything built on top is still Unimplemented.
@@ -37,7 +37,7 @@ export interface Failure<Reason = unknown, Pos = unknown> {
   readonly pos: Pos;
 }
 
-/* ───────────────────── Layer 2: primitive combinators ─────────────────────── */
+/* --------------------- Layer 2: primitive combinators ----------------------- */
 
 /** Match the exact string `S`. */
 export type Lit<S extends string> = Unimplemented<S>;
@@ -48,7 +48,7 @@ export type AnyChar = Unimplemented;
 /** Match only at end of input; consumes nothing. */
 export type EOF = Unimplemented;
 
-/* ───────────────────── Layer 3: composite combinators ─────────────────────── */
+/* --------------------- Layer 3: composite combinators ----------------------- */
 
 /** Run parsers in order; accumulate results into a tuple. */
 export type Seq<Ps extends readonly unknown[]> = Unimplemented<Ps>;
@@ -67,7 +67,7 @@ export type And<P> = Unimplemented<P>;
 /** Rewrite a parse result into an AST node via the type-level function `F`. */
 export type Map<P, F> = Unimplemented<[P, F]>;
 
-/* ──────────────── Layer 4 + validation targets: entry & grammars ───────────── */
+/* ---------------- Layer 4 + validation targets: entry & grammars ------------- */
 
 /** Run `Grammar` against `Input`; yields the AST value, or a `Failure`. */
 export type Parse<Grammar, Input extends string> = Unimplemented<[Grammar, Input]>;

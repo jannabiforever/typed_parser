@@ -9,22 +9,47 @@
  *   - `Parse` requires the WHOLE input to be consumed; leftover input is a failure.
  */
 
+import { describe, expectTypeOf, test } from "vitest";
+
 import type { Lit, CharIn, AnyChar, EOF, Parse } from "../src/index";
-import type { Equal, Expect, IsErr } from "./harness";
+import type { IsErr } from "./harness";
 
-/* Lit — exact string match. */
-export type _lit_ok = Expect<Equal<Parse<Lit<"foo">, "foo">, "foo">>;
-export type _lit_mismatch = Expect<IsErr<Parse<Lit<"foo">, "bar">>>;
-export type _lit_leftover = Expect<IsErr<Parse<Lit<"foo">, "foobar">>>; // "bar" left unconsumed
+describe("Lit — exact string match", () => {
+  test("succeeds on an exact match", () => {
+    expectTypeOf<Parse<Lit<"foo">, "foo">>().toEqualTypeOf<"foo">();
+  });
+  test("fails on a mismatch", () => {
+    expectTypeOf<IsErr<Parse<Lit<"foo">, "bar">>>().toEqualTypeOf<true>();
+  });
+  test("fails when input is left unconsumed", () => {
+    // "bar" left unconsumed
+    expectTypeOf<IsErr<Parse<Lit<"foo">, "foobar">>>().toEqualTypeOf<true>();
+  });
+});
 
-/* CharIn — one character drawn from the set. */
-export type _charin_ok = Expect<Equal<Parse<CharIn<"abc">, "b">, "b">>;
-export type _charin_miss = Expect<IsErr<Parse<CharIn<"abc">, "d">>>;
+describe("CharIn — one character drawn from the set", () => {
+  test("succeeds with the matched character", () => {
+    expectTypeOf<Parse<CharIn<"abc">, "b">>().toEqualTypeOf<"b">();
+  });
+  test("fails on a character outside the set", () => {
+    expectTypeOf<IsErr<Parse<CharIn<"abc">, "d">>>().toEqualTypeOf<true>();
+  });
+});
 
-/* AnyChar — exactly one character of anything. */
-export type _anychar_ok = Expect<Equal<Parse<AnyChar, "x">, "x">>;
-export type _anychar_empty = Expect<IsErr<Parse<AnyChar, "">>>;
+describe("AnyChar — exactly one character of anything", () => {
+  test("succeeds on a single character", () => {
+    expectTypeOf<Parse<AnyChar, "x">>().toEqualTypeOf<"x">();
+  });
+  test("fails on empty input", () => {
+    expectTypeOf<IsErr<Parse<AnyChar, "">>>().toEqualTypeOf<true>();
+  });
+});
 
-/* EOF — matches only the empty remainder. */
-export type _eof_ok = Expect<Equal<Parse<EOF, "">, null>>;
-export type _eof_remaining = Expect<IsErr<Parse<EOF, "x">>>;
+describe("EOF — matches only the empty remainder", () => {
+  test("succeeds with null at end of input", () => {
+    expectTypeOf<Parse<EOF, "">>().toEqualTypeOf<null>();
+  });
+  test("fails when input remains", () => {
+    expectTypeOf<IsErr<Parse<EOF, "x">>>().toEqualTypeOf<true>();
+  });
+});
