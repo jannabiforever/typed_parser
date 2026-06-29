@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "description": "A parser generator that runs entirely in the TypeScript type system.",
   "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
   "type": "module",
   "types": "./src/index.ts",
   "files": [
@@ -18,7 +19,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run format:check && npm run lint && npm run typecheck"
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
