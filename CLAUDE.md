@@ -13,7 +13,9 @@ type Result = Parse<Arithmetic, "1 + 2 * 3">;
 
 ## Current state
 
-Tooling is scaffolded (`package.json`, `tsconfig.json`, ESLint, Prettier); the library itself is **not implemented yet**. `src/index.ts` is a placeholder `export {}` — the real work starts at layer 0 (see build order below). There is no `src/` logic and no tests yet.
+Tooling is scaffolded (`package.json`, `tsconfig.json`, ESLint, Prettier). The public type surface is **stubbed but not implemented**: `src/index.ts` declares every combinator plus the `Parse` entry point, but their bodies resolve to `Unimplemented` (a unique-symbol placeholder). Real work starts at layer 0 (see build order below).
+
+A type-level **test suite already exists** under `tests/`, derived from the README, and is **red on purpose** — it is the spec to implement against. `pnpm test` currently reports the unimplemented behavioural assertions as `TS2344` errors; the protocol-layer tests (`tests/protocol.test-d.ts`) already pass. Each combinator's expected result shape is documented in the header comment of its test file — those comments are the authoritative conventions (e.g. `Opt` yields `null` when absent; `Parse` requires the whole input to be consumed).
 
 Stack: TypeScript (type-only library, nothing is emitted — `tsc` runs purely as the checker), ESLint 10 (flat config, type-aware via typescript-eslint), Prettier. Node ≥ 20.
 
@@ -21,15 +23,15 @@ Stack: TypeScript (type-only library, nothing is emitted — `tsc` runs purely a
 
 This repo uses **pnpm** (pinned via `packageManager` in `package.json`). Run after `pnpm install`:
 
-| Command                | What it does                                                                                                                                                                                                                            |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm run typecheck`   | `tsc --noEmit` — the real "build". This is what proves the types work.                                                                                                                                                                  |
-| `pnpm test`            | Alias for `typecheck`. "Tests" are **type-level assertions** (e.g. `type _ = Expect<Equal<Parse<G, "...">, Expected>>`) that fail by producing a type error — there is no runtime test runner. A failing typecheck _is_ a failing test. |
-| `pnpm run lint`        | ESLint over the repo. `pnpm run lint:fix` to autofix.                                                                                                                                                                                   |
-| `pnpm run format`      | Prettier write. `pnpm run format:check` to verify without writing.                                                                                                                                                                      |
-| `pnpm run check`       | `format:check` + `lint` + `typecheck` — run this before committing.                                                                                                                                                                     |
+| Command              | What it does                                                                                                                                                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run typecheck` | `tsc --noEmit` — the real "build". This is what proves the types work.                                                                                                                                                                  |
+| `pnpm test`          | Alias for `typecheck`. "Tests" are **type-level assertions** (e.g. `type _ = Expect<Equal<Parse<G, "...">, Expected>>`) that fail by producing a type error — there is no runtime test runner. A failing typecheck _is_ a failing test. |
+| `pnpm run lint`      | ESLint over the repo. `pnpm run lint:fix` to autofix.                                                                                                                                                                                   |
+| `pnpm run format`    | Prettier write. `pnpm run format:check` to verify without writing.                                                                                                                                                                      |
+| `pnpm run check`     | `format:check` + `lint` + `typecheck` — run this before committing.                                                                                                                                                                     |
 
-There is no single-test command yet (no test runner). To check one grammar/utility in isolation, write its assertions in a `.ts` file under `tests/` (or `src/`) and run `pnpm run typecheck` — `tsc` checks the whole project at once. ESLint's `no-unused-vars` is configured to ignore underscore-prefixed names, so `type _Check = Expect<...>` lints clean.
+There is no single-test runner. To check one grammar/utility in isolation, add assertions to a `.ts` file under `tests/` and run `pnpm run typecheck` — `tsc` checks the whole project at once. Write each assertion as an **exported** alias — `export type _name = Expect<Equal<Actual, Expected>>` — because `noUnusedLocals` flags unused _non-exported_ aliases (so an unexported assertion errors even when it passes). A failing assertion surfaces as `TS2344` ("Type 'false' does not satisfy the constraint 'true'") on that line. The `Expect` / `Equal` / `IsErr` helpers live in `tests/harness.ts`.
 
 ## Navigating the code (codebase-memory MCP)
 
