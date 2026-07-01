@@ -18,6 +18,7 @@
  *     when named in a `FETCH` clause.
  *   - slice 4: one-hop graph traversal `->edge->target[.field]` -> array
  *     (fanout), array-of-target or array-of-projected-field, with `AS`.
+ *   - slice 5: multi-statement `a; b` -> a positional result tuple.
  *
  * Standalone — shares nothing with the PEG engine (./index.ts) or the PostgREST
  * slice (./select.ts). The small Trim/split/error-brand utilities are
@@ -26,9 +27,9 @@
  *
  * Deferred (each a known extension point):
  *   - `SELECT VALUE` scalar arrays, function returns, SCHEMALESS widening  [6]
- *   - multi-statement `a; b` -> result tuple                              [5]
  *   - nested FETCH paths (`FETCH a.b`), multi-hop / `<-` / `<->` graph
  *   - mixed-case keywords (only all-upper / all-lower today)
+ *   - a `;` inside a string or object literal (naive statement split)
  */
 
 // ---- schema model (slice 0) -------------------------------------------------
@@ -299,11 +300,36 @@ export type InferStatement<Schema extends SurqlSchema, Q extends string> =
       : P // the SurqlError from MatchSelect
     : never;
 
+// Split a query into its `;`-separated statements, dropping empties (so a
+// trailing `;` adds nothing). ponytail: a naive top-level split — a `;` inside
+// a string or object literal is not yet respected.
+type PushNonEmpty<Acc extends readonly string[], S extends string> =
+  Trim<S> extends "" ? Acc : readonly [...Acc, Trim<S>];
+type SplitStatements<
+  S extends string,
+  Cur extends string = "",
+  Acc extends readonly string[] = [],
+> = S extends `${infer H}${infer R}`
+  ? H extends ";"
+    ? SplitStatements<R, "", PushNonEmpty<Acc, Cur>>
+    : SplitStatements<R, `${Cur}${H}`, Acc>
+  : PushNonEmpty<Acc, Cur>;
+
+// Map through a bare parameter so the tuple shape is preserved; `-readonly`
+// drops the modifier that the split accumulator carries, so callers get a
+// plain mutable result tuple.
+type InferStatements<Schema extends SurqlSchema, Stmts extends readonly string[]> = {
+  -readonly [I in keyof Stmts]: InferStatement<Schema, Stmts[I] & string>;
+};
+
 /**
- * The result of `query(q)`: a tuple with one entry per statement. This slice
- * handles a single statement; `;`-splitting into a longer tuple is slice 5.
+ * The result of `query(q)`: a tuple with one entry per statement, so
+ * `const [a, b] = await db.query("…; …")` is typed positionally.
  */
-export type QueryResult<Schema extends SurqlSchema, Q extends string> = [InferStatement<Schema, Q>];
+export type QueryResult<Schema extends SurqlSchema, Q extends string> = InferStatements<
+  Schema,
+  SplitStatements<Trim<Q>>
+>;
 
 // ---- ergonomic client surface (type-only; nothing is emitted) ---------------
 

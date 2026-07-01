@@ -14,7 +14,7 @@
 import { describe, expectTypeOf, test } from "vitest";
 
 import { connect } from "../src/surql";
-import type { InferStatement, RecordId, SurqlError } from "../src/surql";
+import type { InferStatement, QueryResult, RecordId, SurqlError } from "../src/surql";
 
 type Schema = {
   tables: {
@@ -131,10 +131,30 @@ describe("InferStatement — AS aliasing and graph traversal (slice 2/4)", () =>
   });
 });
 
+describe("QueryResult — multiple statements form a tuple (slice 5)", () => {
+  test("each statement becomes a positional tuple entry", () => {
+    expectTypeOf<
+      QueryResult<Schema, "SELECT name FROM person; SELECT title FROM article">
+    >().toEqualTypeOf<[{ name: string }[], { title: string }[]]>();
+  });
+
+  test("a trailing semicolon does not add an entry", () => {
+    expectTypeOf<QueryResult<Schema, "SELECT name FROM person;">>().toEqualTypeOf<
+      [{ name: string }[]]
+    >();
+  });
+});
+
 describe("client — connect().query() end to end", () => {
   test("query resolves to a one-entry tuple of rows", () => {
     const db = connect<Schema>();
     const res = db.query("SELECT name, tags FROM person");
     expectTypeOf(res).resolves.toEqualTypeOf<[{ name: string; tags: string[] }[]]>();
+  });
+
+  test("multiple statements resolve positionally", () => {
+    const db = connect<Schema>();
+    const res = db.query("SELECT name FROM person; SELECT title FROM article");
+    expectTypeOf(res).resolves.toEqualTypeOf<[{ name: string }[], { title: string }[]]>();
   });
 });
