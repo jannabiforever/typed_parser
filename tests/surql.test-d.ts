@@ -31,6 +31,18 @@ type Schema = {
       fields: { title: "string" };
     };
   };
+  edges: {
+    wrote: { in: "person"; out: "article" };
+  };
+};
+
+// person with its own links unfetched — the shape a fetched `person` expands to.
+type PersonRow = {
+  name: string;
+  age: number;
+  active: boolean;
+  best_friend: RecordId<"person">;
+  tags: string[];
 };
 
 describe("InferStatement — SELECT ... FROM ...", () => {
@@ -75,6 +87,46 @@ describe("InferStatement — errors surface as a branded SurqlError", () => {
   test("an unknown table", () => {
     expectTypeOf<InferStatement<Schema, "SELECT * FROM ghost">>().toEqualTypeOf<
       SurqlError<"table 'ghost' does not exist">
+    >();
+  });
+});
+
+describe("InferStatement — record links and FETCH (slice 3)", () => {
+  test("an unfetched link is a RecordId", () => {
+    expectTypeOf<InferStatement<Schema, "SELECT best_friend FROM person">>().toEqualTypeOf<
+      { best_friend: RecordId<"person"> }[]
+    >();
+  });
+
+  test("FETCH expands a link to the full target row", () => {
+    expectTypeOf<
+      InferStatement<Schema, "SELECT best_friend FROM person FETCH best_friend">
+    >().toEqualTypeOf<{ best_friend: PersonRow }[]>();
+  });
+});
+
+describe("InferStatement — AS aliasing and graph traversal (slice 2/4)", () => {
+  test("AS renames a column", () => {
+    expectTypeOf<InferStatement<Schema, "SELECT name AS n FROM person">>().toEqualTypeOf<
+      { n: string }[]
+    >();
+  });
+
+  test("a graph path with .field projection fans out to an array", () => {
+    expectTypeOf<
+      InferStatement<Schema, "SELECT name, ->wrote->article.title AS titles FROM person">
+    >().toEqualTypeOf<{ name: string; titles: string[] }[]>();
+  });
+
+  test("a graph path without projection yields the target rows", () => {
+    expectTypeOf<
+      InferStatement<Schema, "SELECT ->wrote->article AS arts FROM person">
+    >().toEqualTypeOf<{ arts: { title: string }[] }[]>();
+  });
+
+  test("a graph path to the wrong target is a SurqlError", () => {
+    expectTypeOf<InferStatement<Schema, "SELECT ->wrote->person AS x FROM person">>().toEqualTypeOf<
+      { x: SurqlError<"edge 'wrote' does not point to 'person'"> }[]
     >();
   });
 });
