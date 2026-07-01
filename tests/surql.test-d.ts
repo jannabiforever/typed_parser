@@ -30,9 +30,13 @@ type Schema = {
     article: {
       fields: { title: "string" };
     };
+    tag: {
+      fields: { label: "string" };
+    };
   };
   edges: {
     wrote: { in: "person"; out: "article" };
+    tagged: { in: "article"; out: "tag" };
   };
 };
 
@@ -127,6 +131,32 @@ describe("InferStatement — AS aliasing and graph traversal (slice 2/4)", () =>
   test("a graph path to the wrong target is a SurqlError", () => {
     expectTypeOf<InferStatement<Schema, "SELECT ->wrote->person AS x FROM person">>().toEqualTypeOf<
       { x: SurqlError<"edge 'wrote' does not point to 'person'"> }[]
+    >();
+  });
+});
+
+describe("InferStatement — multi-hop and reverse graph traversal (slice 4+)", () => {
+  test("a multi-hop path chains edges and projects the last node", () => {
+    expectTypeOf<
+      InferStatement<Schema, "SELECT ->wrote->article->tagged->tag.label AS labels FROM person">
+    >().toEqualTypeOf<{ labels: string[] }[]>();
+  });
+
+  test("a multi-hop path without projection yields the last node's rows", () => {
+    expectTypeOf<
+      InferStatement<Schema, "SELECT ->wrote->article->tagged->tag AS tags FROM person">
+    >().toEqualTypeOf<{ tags: { label: string }[] }[]>();
+  });
+
+  test("a reverse path `<-` walks incoming edges", () => {
+    expectTypeOf<
+      InferStatement<Schema, "SELECT <-wrote<-person.name AS authors FROM article">
+    >().toEqualTypeOf<{ authors: string[] }[]>();
+  });
+
+  test("a reverse path with the wrong source is a SurqlError", () => {
+    expectTypeOf<InferStatement<Schema, "SELECT <-tagged<-person AS x FROM tag">>().toEqualTypeOf<
+      { x: SurqlError<"edge 'tagged' does not come from 'person'"> }[]
     >();
   });
 });

@@ -16,8 +16,9 @@
  *   - slice 2 (partial): `AS` aliasing (`name AS n`, and on graph paths).
  *   - slice 3: record links resolve to `RecordId<T>`, or the full target row
  *     when named in a `FETCH` clause.
- *   - slice 4: one-hop graph traversal `->edge->target[.field]` -> array
- *     (fanout), array-of-target or array-of-projected-field, with `AS`.
+ *   - slice 4: graph traversal `->edge->target[->…][.field]`, multi-hop and
+ *     reverse (`<-`) -> array (fanout); whole target rows or a projected
+ *     field, named with `AS` or auto-keyed from the path text.
  *   - slice 5: multi-statement `a; b` -> a positional result tuple.
  *
  * Standalone — shares nothing with the PEG engine (./index.ts) or the PostgREST
@@ -27,7 +28,7 @@
  *
  * Deferred (each a known extension point):
  *   - `SELECT VALUE` scalar arrays, function returns, SCHEMALESS widening  [6]
- *   - nested FETCH paths (`FETCH a.b`), multi-hop / `<-` / `<->` graph
+ *   - nested FETCH paths (`FETCH a.b`), bidirectional `<->` graph edges
  *   - mixed-case keywords (only all-upper / all-lower today)
  *   - a `;` inside a string or object literal (naive statement split)
  */
@@ -126,12 +127,15 @@ type SplitNames<S extends string> = S extends `${infer H},${infer R}`
 
 type StarNode = { kind: "star" };
 type ColNode<N extends string> = { kind: "col"; name: N };
-// A graph path `->edge->target`, with `proj` the `.field` projection ("" = none).
-type GraphNode<E extends string, T extends string, P extends string> = {
+// A single traversal step: direction, edge table, and target node table.
+type Hop = { dir: "in" | "out"; edge: string; target: string };
+// A graph path: a chain of hops, a `.field` projection ("" = none), and the raw
+// source text (used as the auto-key when the path has no `AS` alias).
+type GraphNode<Hops extends readonly Hop[], P extends string, Raw extends string> = {
   kind: "graph";
-  edge: E;
-  target: T;
+  hops: Hops;
   proj: P;
+  raw: Raw;
 };
 type AliasNode<A extends string, X> = { kind: "alias"; name: A; expr: X };
 
@@ -145,16 +149,46 @@ type SplitComma<
     : SplitComma<R, `${Cur}${H}`, Acc>
   : readonly [...Acc, Cur];
 
-type ParseGraph<Rest extends string> = Rest extends `${infer Edge}->${infer After}`
-  ? After extends `${infer Target}.${infer Proj}`
-    ? GraphNode<Trim<Edge>, Trim<Target>, Trim<Proj>>
-    : GraphNode<Trim<Edge>, Trim<After>, "">
-  : SurqlError<`could not parse graph path '->${Rest}'`>;
+// Read a leading identifier, stopping at an arrow (`-`/`<`) or a `.` projection.
+type ReadIdent<S extends string, Acc extends string = ""> = S extends `${infer C}${infer R}`
+  ? C extends "-" | "<" | "."
+    ? { ident: Acc; rest: S }
+    : ReadIdent<R, `${Acc}${C}`>
+  : { ident: Acc; rest: "" };
+// Consume a leading `->` (out) or `<-` (in) arrow; `"none"` when there is none.
+type Arrow<S extends string> = S extends `->${infer R}`
+  ? { dir: "out"; rest: R }
+  : S extends `<-${infer R}`
+    ? { dir: "in"; rest: R }
+    : { dir: "none"; rest: S };
+
+// Parse a graph path into hops plus a trailing `.field` projection. Each hop is
+// `<arrow><edge><arrow><node>`; the hop direction comes from its first arrow.
+type ParsePath<S extends string, Acc extends readonly Hop[] = []> = S extends `.${infer Proj}`
+  ? { hops: Acc; proj: Trim<Proj> }
+  : S extends ""
+    ? { hops: Acc; proj: "" }
+    : Arrow<S> extends { dir: infer D extends "in" | "out"; rest: infer A1 extends string }
+      ? ReadIdent<A1> extends { ident: infer E extends string; rest: infer A2 extends string }
+        ? Arrow<A2> extends { dir: "in" | "out"; rest: infer A3 extends string }
+          ? ReadIdent<A3> extends { ident: infer N extends string; rest: infer A4 extends string }
+            ? ParsePath<A4, readonly [...Acc, { dir: D; edge: E; target: N }]>
+            : SurqlError<`could not parse graph path near '${A3}'`>
+          : SurqlError<`could not parse graph path near '${A2}'`>
+        : SurqlError<`could not parse graph path near '${A1}'`>
+      : SurqlError<`could not parse graph path '${S}'`>;
+
+type ToGraph<E extends string> =
+  ParsePath<E> extends infer P
+    ? P extends { hops: infer H extends readonly Hop[]; proj: infer Pr extends string }
+      ? GraphNode<H, Pr, E>
+      : P // the SurqlError
+    : never;
 
 type ParseExpr<E extends string> = E extends "*"
   ? StarNode
-  : E extends `->${infer Rest}`
-    ? ParseGraph<Rest>
+  : E extends `->${string}` | `<-${string}`
+    ? ToGraph<E>
     : ColNode<E>;
 
 type ParseField<F extends string> = F extends `${infer E} AS ${infer A}`
@@ -196,30 +230,64 @@ type EdgesOf<Schema extends SurqlSchema> = Schema extends {
   ? E
   : Record<never, never>;
 
-type GraphKey<E extends string, T extends string, P extends string> = P extends ""
-  ? `->${E}->${T}`
-  : `->${E}->${T}.${P}`;
+/** Validate one hop; `true` if `Edge` connects `Cur` to `Target` along `Dir`. */
+type StepEdge<
+  Schema extends SurqlSchema,
+  Cur extends string,
+  Dir extends "in" | "out",
+  Edge extends string,
+  Target extends string,
+> = Edge extends keyof EdgesOf<Schema>
+  ? EdgesOf<Schema>[Edge] extends { in: infer In extends string; out: infer Out extends string }
+    ? Dir extends "out"
+      ? Cur extends In
+        ? Out extends Target
+          ? true
+          : SurqlError<`edge '${Edge}' does not point to '${Target}'`>
+        : SurqlError<`edge '${Edge}' does not start from '${Cur}'`>
+      : Cur extends Out
+        ? In extends Target
+          ? true
+          : SurqlError<`edge '${Edge}' does not come from '${Target}'`>
+        : SurqlError<`edge '${Edge}' does not end at '${Cur}'`>
+    : SurqlError<`edge '${Edge}' is malformed`>
+  : SurqlError<`edge '${Edge}' does not exist`>;
 
-/** The value produced by traversing `Src ->Edge-> Target[.Proj]`. */
+/** Fold a hop chain; yields the final table name, or the first hop's error. */
+type ResolveHops<
+  Schema extends SurqlSchema,
+  Cur extends string,
+  Hops extends readonly Hop[],
+> = Hops extends readonly [infer H, ...infer Rest]
+  ? H extends {
+      dir: infer D extends "in" | "out";
+      edge: infer E extends string;
+      target: infer Tgt extends string;
+    }
+    ? Rest extends readonly Hop[]
+      ? StepEdge<Schema, Cur, D, E, Tgt> extends true
+        ? ResolveHops<Schema, Tgt, Rest>
+        : StepEdge<Schema, Cur, D, E, Tgt>
+      : never
+    : never
+  : Cur;
+
+/** The value of a graph path from `Src`: an array, since a traversal fans out. */
 type GraphValue<
   Schema extends SurqlSchema,
   Src extends string,
-  Edge extends string,
-  Target extends string,
+  Hops extends readonly Hop[],
   Proj extends string,
-> = Edge extends keyof EdgesOf<Schema>
-  ? EdgesOf<Schema>[Edge] extends { in: infer In extends string; out: infer Out extends string }
-    ? Src extends In
-      ? Out extends Target
-        ? Proj extends ""
-          ? Prettify<ResolveRow<Schema, Target, never>>[] // whole target rows (fanout)
-          : Proj extends keyof TableFields<Schema, Target>
-            ? ResolveField<Schema, TableFields<Schema, Target>[Proj], false>[]
-            : SurqlError<`field '${Proj}' does not exist on '${Target}'`>
-        : SurqlError<`edge '${Edge}' does not point to '${Target}'`>
-      : SurqlError<`edge '${Edge}' does not start from '${Src}'`>
-    : SurqlError<`edge '${Edge}' is malformed`>
-  : SurqlError<`edge '${Edge}' does not exist`>;
+> =
+  ResolveHops<Schema, Src, Hops> extends infer Final
+    ? Final extends string
+      ? Proj extends ""
+        ? Prettify<ResolveRow<Schema, Final, never>>[] // whole target rows (fanout)
+        : Proj extends keyof TableFields<Schema, Final>
+          ? ResolveField<Schema, TableFields<Schema, Final>[Proj], false>[]
+          : SurqlError<`field '${Proj}' does not exist on '${Final}'`>
+      : Final // a SurqlError from some hop
+    : never;
 
 /** Resolve a single select expression (the thing an `AS` alias renames). */
 type ExprValue<
@@ -235,11 +303,10 @@ type ExprValue<
       : SurqlError<`field '${N}' does not exist on '${T}'`>
     : Expr extends {
           kind: "graph";
-          edge: infer E extends string;
-          target: infer Tgt extends string;
+          hops: infer H extends readonly Hop[];
           proj: infer P extends string;
         }
-      ? GraphValue<Schema, T, E, Tgt, P>
+      ? GraphValue<Schema, T, H, P>
       : Expr extends SurqlError<infer M>
         ? SurqlError<M>
         : SurqlError<"unsupported select expression">;
@@ -266,11 +333,11 @@ type Contribution<
       ? { [K in A]: ExprValue<Schema, T, X, Fetched> }
       : Node extends {
             kind: "graph";
-            edge: infer E extends string;
-            target: infer Tgt extends string;
+            hops: infer H extends readonly Hop[];
             proj: infer P extends string;
+            raw: infer Raw extends string;
           }
-        ? { [K in GraphKey<E, Tgt, P>]: GraphValue<Schema, T, E, Tgt, P> }
+        ? { [K in Raw]: GraphValue<Schema, T, H, P> }
         : Node extends SurqlError<infer M>
           ? { [K in "__parseError"]: SurqlError<M> }
           : Record<never, never>;
